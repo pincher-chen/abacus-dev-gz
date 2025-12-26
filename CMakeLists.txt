@@ -37,6 +37,7 @@ option(ENABLE_FFT_TWO_CENTER "Enable FFT-based two-center integral method." ON)
 option(ENABLE_GOOGLEBENCH "Enable GOOGLE-benchmark usage." OFF)
 option(ENABLE_RAPIDJSON "Enable rapid-json usage." OFF)
 option(ENABLE_CNPY "Enable cnpy usage." OFF)
+option(ENABLE_HDF5 "Enable HDF5 output format." OFF)
 option(ENABLE_PEXSI "Enable support for PEXSI." OFF)
 option(ENABLE_CUSOLVERMP "Enable cusolvermp." OFF)
 option(USE_DSP "Enable DSP usage." OFF)
@@ -503,7 +504,21 @@ if (ENABLE_CNPY)
     cnpy.h
     HINTS ${libnpy_INCLUDE_DIR}
   )
-  if(NOT cnpy_SOURCE_DIR)
+  
+  # Try to find pre-built cnpy library
+  find_library(CNPY_LIBRARY
+    NAMES cnpy libcnpy
+    HINTS ${libnpy_INCLUDE_DIR}/../lib ${CMAKE_PREFIX_PATH}/lib
+  )
+  
+  if(cnpy_SOURCE_DIR AND CNPY_LIBRARY)
+    # Use pre-built cnpy
+    message(STATUS "Found pre-built cnpy: ${CNPY_LIBRARY}")
+    include_directories(${cnpy_SOURCE_DIR})
+    add_library(cnpy UNKNOWN IMPORTED)
+    set_target_properties(cnpy PROPERTIES IMPORTED_LOCATION ${CNPY_LIBRARY})
+  elseif(NOT cnpy_SOURCE_DIR)
+    # Download and build cnpy
     include(FetchContent)
     FetchContent_Declare(
       cnpy
@@ -512,14 +527,38 @@ if (ENABLE_CNPY)
     )
     FetchContent_MakeAvailable(cnpy)
   else()
-    include_directories(${cnpy_INCLUDE_DIR})
+    include_directories(${cnpy_SOURCE_DIR})
   endif()
-  include_directories(${cnpy_SOURCE_DIR})
   
   # find ZLIB and link
   find_package(ZLIB REQUIRED)
   target_link_libraries(${ABACUS_BIN_NAME} cnpy ZLIB::ZLIB)
   add_compile_definitions(__USECNPY)
+endif()
+
+# HDF5 support for matrix output
+if (ENABLE_HDF5)
+  # Try to find HDF5 with C++ support
+  if(DEFINED ENV{HDF5_DIR})
+    set(HDF5_ROOT $ENV{HDF5_DIR})
+    message(STATUS "Using HDF5_DIR from environment: ${HDF5_ROOT}")
+  endif()
+  
+  find_package(HDF5 REQUIRED COMPONENTS CXX)
+  
+  if(HDF5_FOUND)
+    message(STATUS "Found HDF5: ${HDF5_VERSION}")
+    message(STATUS "  HDF5 include dirs: ${HDF5_INCLUDE_DIRS}")
+    message(STATUS "  HDF5 libraries: ${HDF5_LIBRARIES}")
+    message(STATUS "  HDF5 definitions: ${HDF5_DEFINITIONS}")
+    
+    include_directories(${HDF5_INCLUDE_DIRS})
+    add_compile_definitions(${HDF5_DEFINITIONS})
+    add_compile_definitions(__USEHDF5)
+    target_link_libraries(${ABACUS_BIN_NAME} ${HDF5_LIBRARIES})
+  else()
+    message(FATAL_ERROR "HDF5 is required but not found. Please install HDF5 or set HDF5_DIR environment variable.")
+  endif()
 endif()
 
 function(git_submodule_update)
