@@ -76,6 +76,11 @@ if(ENABLE_LCAO)
       cal_r_overlap_R.cpp
       output_mat_sparse.cpp
   )
+  if(ENABLE_HDF5)
+    list(APPEND objects_advanced
+        write_HS_R_hdf5.cpp
+    )
+  endif()
 endif()
 
 add_library(

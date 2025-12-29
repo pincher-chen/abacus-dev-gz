@@ -18,6 +18,9 @@
 #include "module_io/output_mulliken.h"
 #include "module_io/output_sk.h"
 #include "module_io/to_qo.h"
+#ifdef __USEHDF5
+#include "module_io/write_HS_R_hdf5.h"
+#endif
 #include "module_io/to_wannier90_lcao.h"
 #include "module_io/to_wannier90_lcao_in_pw.h"
 #include "module_io/write_HS.h"
@@ -43,6 +46,7 @@
 #include "module_io/print_info.h"
 
 #include <memory>
+#include <type_traits>  // for std::is_same in HDF5 output
 #ifdef __EXX
 #include "module_io/restart_exx_csr.h"
 #include "module_ri/RPA_LRI.h"
@@ -1138,6 +1142,31 @@ void ESolver_KS_LCAO<TK, TR>::after_scf(UnitCell& ucell, const int istep)
         }
     }
 
+    // 11.5) write both H(R) and S(R) in npz format.
+    if (PARAM.inp.out_hsr_npz)
+    {
+        this->p_hamilt->updateHk(0); // first k point, up spin
+        hamilt::HamiltLCAO<std::complex<double>, double>* p_ham_lcao
+            = dynamic_cast<hamilt::HamiltLCAO<std::complex<double>, double>*>(this->p_hamilt);
+        
+        // Output S(R) - overlap matrix (same for all spins)
+        std::string zipname = "output_SR.npz";
+        ModuleIO::output_mat_npz(ucell, zipname, *(p_ham_lcao->getSR()));
+        
+        // Output H(R) - Hamiltonian matrix for spin 0
+        zipname = "output_HR0.npz";
+        ModuleIO::output_mat_npz(ucell, zipname, *(p_ham_lcao->getHR()));
+
+        if (PARAM.inp.nspin == 2)
+        {
+            this->p_hamilt->updateHk(this->kv.get_nks() / 2); // the other half of k points, down spin
+            hamilt::HamiltLCAO<std::complex<double>, double>* p_ham_lcao
+                = dynamic_cast<hamilt::HamiltLCAO<std::complex<double>, double>*>(this->p_hamilt);
+            zipname = "output_HR1.npz";
+            ModuleIO::output_mat_npz(ucell, zipname, *(p_ham_lcao->getHR()));
+        }
+    }
+
     // 12) write density matrix in the 'npz' format.
     if (PARAM.inp.out_dm_npz)
     {
@@ -1171,6 +1200,38 @@ void ESolver_KS_LCAO<TK, TR>::after_scf(UnitCell& ucell, const int istep)
                                     this->gd,
                                     this->kv,
                                     this->p_hamilt);
+
+#ifdef __USEHDF5
+        //! Output matrices in HDF5 format with compression
+        if (PARAM.inp.out_mat_hs2_hdf5)
+        {
+            LCAO_HS_Arrays HS_Arrays_hdf5;
+            std::stringstream hdf5_filename;
+            hdf5_filename << "data-HSR_step" << istep << ".h5";
+            
+            // 注意：output_HSR_hdf5 只支持 complex<double> 类型的 Hamilt（多 k 点计算）
+            // 对于 gamma-only 计算，此功能暂不支持
+            if constexpr (std::is_same<TK, std::complex<double>>::value) {
+                ModuleIO::output_HSR_hdf5(ucell,
+                                          istep,
+                                          this->pelec->pot->get_effective_v(),
+                                          this->pv,
+                                          HS_Arrays_hdf5,
+                                          this->gd,
+                                          this->kv,
+                                          this->p_hamilt,
+#ifdef __EXX
+                                          nullptr,
+                                          nullptr,
+#endif
+                                          hdf5_filename.str(),
+                                          1e-10,  // sparse_threshold
+                                          9);     // compression_level (0-9, 9=最大压缩)
+            } else {
+                std::cout << "Warning: HDF5 output is only supported for multi-k calculations, skipped." << std::endl;
+            }
+        }
+#endif
 
         //! Perform Mulliken charge analysis
         if (PARAM.inp.out_mul)

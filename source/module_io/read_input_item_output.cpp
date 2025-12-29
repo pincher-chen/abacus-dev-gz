@@ -280,6 +280,26 @@ void ReadInput::item_output()
         this->add_item(item);
     }
     {
+        Input_Item item("out_mat_hs2_hdf5");
+        item.annotation = "output H(R) and S(R) matrix in HDF5 format with gzip compression";
+        read_sync_bool(input.out_mat_hs2_hdf5);
+        item.check_value = [](const Input_Item& item, const Parameter& para) {
+#ifndef __USEHDF5
+            if (para.inp.out_mat_hs2_hdf5)
+            {
+                ModuleBase::WARNING_QUIT("ReadInput", 
+                    "out_mat_hs2_hdf5 requires HDF5 library. Please recompile with -DENABLE_HDF5=ON");
+            }
+#endif
+            if (para.inp.out_mat_hs2_hdf5 && para.sys.gamma_only_local)
+            {
+                ModuleBase::WARNING_QUIT("ReadInput", 
+                    "out_mat_hs2_hdf5 is not available for gamma only calculations");
+            }
+        };
+        this->add_item(item);
+    }
+    {
         Input_Item item("out_mat_dh");
         item.annotation = "output of derivative of H(R) matrix";
         read_sync_bool(input.out_mat_dh);
@@ -309,6 +329,22 @@ void ReadInput::item_output()
         read_sync_bool(input.out_hr_npz);
         item.check_value = [](const Input_Item& item, const Parameter& para) {
             if (para.input.out_hr_npz)
+            {
+#ifndef __USECNPY
+                ModuleBase::WARNING_QUIT("ReadInput",
+                                         "to write in npz format, please "
+                                         "recompile with -DENABLE_CNPY=1");
+#endif
+            }
+        };
+        this->add_item(item);
+    }
+    {
+        Input_Item item("out_hsr_npz");
+        item.annotation = "output both H(R) and S(R) matrices in npz format";
+        read_sync_bool(input.out_hsr_npz);
+        item.check_value = [](const Input_Item& item, const Parameter& para) {
+            if (para.input.out_hsr_npz)
             {
 #ifndef __USECNPY
                 ModuleBase::WARNING_QUIT("ReadInput",
@@ -378,7 +414,7 @@ void ReadInput::item_output()
         read_sync_bool(input.out_mat_r);
         item.check_value = [](const Input_Item& item, const Parameter& para) {
             if ((para.inp.out_mat_r || para.inp.out_mat_hs2 || para.inp.out_mat_t 
-                    || para.inp.out_mat_dh || para.inp.out_hr_npz
+                    || para.inp.out_mat_dh || para.inp.out_hr_npz || para.inp.out_hsr_npz
                     || para.inp.out_dm_npz || para.inp.dm_to_rho)
                 && para.sys.gamma_only_local)
             {
